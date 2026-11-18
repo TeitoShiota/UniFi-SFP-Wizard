@@ -2,6 +2,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://images.svc.ui.com; connect-src 'self' https://api.github.com https://raw.githubusercontent.com; object-src 'none'; base-uri 'none'">
 
     <title>SFP Wizard</title>
 
@@ -141,6 +143,15 @@ The tool connects to your SFP Wizard using the Web Bluetooth API.">
                                         </select>
                                     </div>
                                     <!-- End: Local Backup Library -->
+
+                                    <!-- Start: Recode Profile -->
+                                    <div class="mb-3">
+                                        <label for="sfp-recode" class="form-label">Recode as (vendor profile)</label>
+                                        <select class="form-select" id="sfp-recode" aria-label="Recode profile">
+                                            <option value="" selected>None - write image unchanged</option>
+                                        </select>
+                                    </div>
+                                    <!-- End: Recode Profile -->
                                 </div>
                                 <!-- End: SFP Flash -->
 

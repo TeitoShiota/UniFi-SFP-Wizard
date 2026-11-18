@@ -1,0 +1,9 @@
+node_modules/
+.serena/
+# Build output; CI builds it.
+dist/bundle.js
+dist/bundle.js.LICENSE.txt
+dist/bundle.js.map
+# Real module dumps contain serial numbers; keep them out of the public repo.
+eeprom-library/dumps/*.uieeprom
+eeprom-library/dumps/*.bin

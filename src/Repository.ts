@@ -33,7 +33,7 @@ export class Repository {
                 data.forEach(element => {
                     if (element.name.endsWith(".uieeprom")) {
                         const label = nameByFile[element.name] || element.name.replace(".uieeprom", "");
-                        $("#sfp-repo").append(`<option value="${element.name}">${label}</option>`)
+                        $("#sfp-repo").append($("<option>").val(element.name).text(label))
                     }
                 })
 

@@ -11,6 +11,8 @@ import {FormatType} from "./FormatType";
 import {Repository} from "./Repository";
 import {BackupStore} from "./BackupStore";
 import untar from "js-untar";
+import {checksums, recode, type Profile} from "./Recode";
+import profiles from "../eeprom-library/profiles.json";
 
 
 class Wizard {
@@ -310,7 +312,7 @@ class Wizard {
             }
 
             try {
-                const url = `https://raw.githubusercontent.com/posi211/UniFi-SFP-Wizard/master/repository/${filename}`;
+                const url = `https://raw.githubusercontent.com/Gamer08YT/UniFi-SFP-Wizard/master/repository/${filename}`;
                 const response = await fetch(url);
 
                 if (!response.ok) {
@@ -581,6 +583,11 @@ class Wizard {
         Wizard.backupGroup = $("#sfp-backup-group");
         Wizard.backupSearch = $("#backup-search");
         Wizard.backupSelect = $("#sfp-backup");
+
+        // Recode profiles from the local EEPROM library.
+        for (const p of profiles as Profile[]) {
+            $("#sfp-recode").append($("<option>").val(p.id).text(`${p.vendor} ${p.class} - ${p.sku}${p.needsRealDump ? " (needs real dump)" : ""}`));
+        }
 
         // Load new Theme if Classic Param is not set.
         if (!Wizard.shouldUseClassicTheme()) {
@@ -1521,7 +1528,18 @@ class Wizard {
     private async writeXSFP() {
         return await this.cancelSync().then(async (r) => {
             return await this.readFile().then(async (eeprom) => {
+                eeprom = await Wizard.applyRecode(eeprom);
+
                 const size = eeprom?.length;
+
+                // Refuse corrupt SFF-8472 images (QSFP 640-byte layout not checked).
+                if (eeprom !== null && size == 512) {
+                    const cc = checksums(eeprom);
+                    if (!cc.base || !cc.ext) {
+                        Wizard.notify(i18next.t("common:eeprom-checksum-error"), "failure");
+                        throw new Error("Bad EEPROM checksums");
+                    }
+                }
 
                 // Check for the correct File Type.
                 if (eeprom !== null && (size == 512 || size == 640)) {
@@ -1573,7 +1591,7 @@ class Wizard {
                     console.log(`Received size: ${data.size} and chunk: ${data.chunk}.`);
 
                     // Get Data from Device.
-                    await this.startStreamProcess(0, (data.size = 0 ? 512 : data.size)).then(async (r) => {
+                    await this.startStreamProcess(0, (data.size || 512)).then(async (r) => {
                         // Download SFP File to Device.
                         this.downloadStream(r);
 
@@ -1652,7 +1670,12 @@ class Wizard {
      * @return {void} This method does not return a value.
      */
     private static setLog(s: string, legacy: boolean) {
-        $("#log-container").append(`<div title="${legacy ? i18next.t("common:api-legacy") : i18next.t("common:api-new")}" class="log"><a>${this.formatTimeHHMMSS()} - </a><code>${s}</code></div>`);
+        $("#log-container").append(
+            $("<div class='log'>").attr("title", legacy ? i18next.t("common:api-legacy") : i18next.t("common:api-new")).append(
+                $("<a>").text(`${this.formatTimeHHMMSS()} - `),
+                $("<code>").text(s)
+            )
+        );
 
         if (this.hasAutoscroll()) {
             Wizard.scrollLogToBottom();
@@ -1885,7 +1908,7 @@ class Wizard {
             records.forEach(r => {
                 const date = new Date(r.savedAt).toLocaleString();
                 const label = `${r.partNumber} — ${r.sn} (${r.vendor}, saved ${date})`;
-                Wizard.backupSelect.append(`<option value="${r.id}">${label}</option>`);
+                Wizard.backupSelect.append($("<option>").val(String(r.id)).text(label));
             });
         } catch (e) {
             console.warn("Failed to load local backup library.", e);
@@ -2025,6 +2048,38 @@ class Wizard {
         if (!file) return null;
 
         return new Uint8Array(await file.arrayBuffer());
+    }
+
+    /**
+     * Applies the "Recode as" vendor profile (if one is chosen) to the image about to be written.
+     * Any warning (class mismatch, vendor that checks hidden bytes) needs explicit confirmation.
+     * Throws when recoding fails or the user cancels, so nothing gets written.
+     */
+    private static async applyRecode(eeprom: Uint8Array | null): Promise<Uint8Array | null> {
+        const id = $("#sfp-recode").val() as string;
+        if (!id || eeprom === null) return eeprom;
+
+        const profile = (profiles as Profile[]).find(p => p.id === id)!;
+        let result;
+        try {
+            result = recode(eeprom, profile);
+        } catch (e: any) {
+            Wizard.notify(`${i18next.t("common:recode-error")} ${e.message}`, "failure");
+            throw e;
+        }
+
+        if (result.warnings.length > 0) {
+            const ok = await new Promise<boolean>(resolve => Confirm.show(
+                i18next.t("common:recode-warning-title"),
+                result.warnings.join(" ") + " " + i18next.t("common:recode-warning-question"),
+                i18next.t("common:yes"), i18next.t("common:no"),
+                () => resolve(true), () => resolve(false)
+            ));
+            if (!ok) throw new Error("Recode cancelled by user");
+        }
+
+        console.log(`Recoded image as profile '${profile.id}'.`);
+        return result.image;
     }
 
     /**
@@ -2231,7 +2286,7 @@ class Wizard {
                 if ($("#electron-device-selector").children(`option[value="${v.deviceId}"]`).length === 0) {
                     console.log(`New Device found: ${v.deviceName} (${v.deviceId})`);
 
-                    $("#electron-device-selector").append(`<option value="${v.deviceId}">${v.deviceName}</option>`);
+                    $("#electron-device-selector").append($("<option>").val(v.deviceId).text(v.deviceName));
                 }
             }
         });

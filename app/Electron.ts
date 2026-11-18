@@ -34,9 +34,13 @@ class Electron {
             autoHideMenuBar: true,
             webPreferences: {
                 preload: path.join(__dirname, "preload.js"),
-                devTools: true
+                devTools: !app.isPackaged
             },
         });
+
+        // The window only ever shows the bundled page: no popups, no navigation away.
+        this.windowInstance.webContents.setWindowOpenHandler(() => ({action: "deny"}));
+        this.windowInstance.webContents.on("will-navigate", (event) => event.preventDefault());
 
         console.log(`Loading Preload ${path.join(__dirname, "preload.js")}`)
 
@@ -96,7 +100,19 @@ class Electron {
         });
 
         ipcMain.on("open", (event, url) =>{
-            shell.openExternal(url, {
+            // Only hand https links to the OS; other schemes (file:, custom handlers) can launch programs.
+            let parsed: URL;
+            try {
+                parsed = new URL(url);
+            } catch {
+                return;
+            }
+            if (parsed.protocol !== "https:") {
+                console.warn(`Refused to open non-https URL: ${url}`);
+                return;
+            }
+
+            shell.openExternal(parsed.href, {
                 activate: true
             }).then(() => {
                 console.log(`Successfully opened ${url} in default browser`);
@@ -162,4 +178,9 @@ class Electron {
 }
 
 // Start the application.
+// Chromium on Linux only exposes navigator.bluetooth behind this flag. Must be set before app is ready.
+if (process.platform === "linux") {
+    app.commandLine.appendSwitch("enable-experimental-web-platform-features");
+}
+
 new Electron();
